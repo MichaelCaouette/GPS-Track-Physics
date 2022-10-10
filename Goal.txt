@@ -1,0 +1,33 @@
+Determine some physics from the GPS data !
+
+
+Good starting point for reading GPS data with python:
+A lot of inspiration from 
+https://www.youtube.com/watch?v=9Q8nEA_0ccg
+Florian Wilhelm - Handling GPS Data with Python
+
+And his github repo:
+    https://github.com/FlorianWilhelm/gps_data_with_python
+
+For idea of 3D viewer:
+https://pyqtgraph.readthedocs.io/en/latest/3dgraphics/glviewwidget.html
+
+
+List of update to make for the software:
+- Remove outliers: 
+	Have a button or list of command to manage the outliers. 
+	Maybe also use some sophisticated algorithm to manage it. 
+
+
+
+
+
+
+
+
+
+
+
+
+
+

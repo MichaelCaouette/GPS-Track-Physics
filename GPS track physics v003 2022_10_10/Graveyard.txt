@@ -1,0 +1,49 @@
+        # TODO send all that to another GUI that includes to make physical analysis
+        # Show the chopped data 
+        # TODO Delete that when everything works
+        # self.viewer_chop = TrajectoryViewer(name='Chopped data. GUI WILL BE OPTIMIZED FOR PHYSIC')
+        # self.viewer_chop.show()
+        # self.viewer_chop.set_trajectory(self.ts_chopped, 
+        #                                 self.xs_chopped, 
+        #                                 self.ys_chopped, 
+        #                                 self.zs_chopped,
+        #                                 units=self.units,
+        #                                 labels=self.labels)        
+        # # Some physics (will be in a seperate location latter)
+        # print()
+        # print(' --- Physical quantities ---')
+        # print()
+        # print('Info on chopped data \nPLEASE VERIFY THE UNITs. COORDINATE SYSTEM MUST BE OKAY:\n')
+        # # Elapsed time
+        # dt = 60*(self.ts_chopped[-1]-self.ts_chopped[0])
+        # print('Duration = %.3f s = %.3f min'%(dt, dt/60))
+        # # Mean drop
+        # drop = self.zs_chopped[-1]-self.zs_chopped[0]
+        # print('Vertical drop = %.3f m'%drop)
+        # # Mean vertical speed
+        # vertical_speed = drop/dt        
+        # print('vertical_speed = %.3f m/s'%vertical_speed)
+        # # Total distance travelled
+        # # Determine a correct size for the points
+        # # Set by the mean distance between points
+        # list_dx = np.diff(self.xs_chopped)
+        # list_dy = np.diff(self.ys_chopped)
+        # list_dz = np.diff(self.zs_chopped)
+        # list_grd_dist = (list_dx**2 + list_dy**2)**0.5
+        # sum_grd_dist = np.sum(list_grd_dist)
+        # print('Travelled distance projected: %.2f m'%sum_grd_dist)
+        # list_3D_dist = (list_dx**2 + list_dy**2 + list_dz**2)**0.5
+        # sum_3D_dist = np.sum(list_3D_dist)   
+        # print('Travelled distance in 3D:     %.2f m'%sum_3D_dist)
+        # # Wind speed
+        # windy = WindEstimator()
+        # Vaircraft, w, angle =windy.get_wind_rough(self.ts_chopped*60, 
+        #                                           self.xs_chopped, 
+        #                                           self.ys_chopped,
+        #                                           plot_data=True)
+        # print('Aircraft speed = %.2f km/h'%(3.6*Vaircraft))
+        # print('Wind speed     = %.2f km/h'%(3.6*w       ))
+        # print('Wind direction = %.1f degree'%(angle*180/np.pi))
+        # print()               
+        # print('IDEA: Search for the maximum vertical speed (varying the initial and end point.')
+        # print('IDEA: Estimate the wind. How ? from the turns ?')

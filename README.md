@@ -1,4 +1,4 @@
-# GPS-Track-Ph# GPS-Track-Physics
+# GPS-Track-Physics
 Goal: 
 Load GPS flight data and analyse them throught a cool 3D viewer. 
 

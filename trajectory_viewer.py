@@ -55,7 +55,7 @@ class TrajectoryViewer(egg.gui.Window):
                           column_span=1, row_span=1, alignment=0) # Settting the alignement seems important !
         
         # Plots for showing the track in 2D
-        self.win_plot2D = egg.pyqtgraph.GraphicsWindow(title="Trajectory")
+        self.win_plot2D = egg.pyqtgraph.GraphicsLayoutWidget(title="Trajectory")
         self.plot_groundproj = self.win_plot2D.addPlot(title="Ground Projection")
         self.win_plot2D.nextRow()
         self.plot_elev       = self.win_plot2D.addPlot(title="Elevation VS time")   

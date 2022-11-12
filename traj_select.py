@@ -7,8 +7,10 @@ Goal:
 @author: mcaoue2
 """
 
-import gpxpy
+
 import numpy as np
+
+import os
 
 from spinmob import egg
 import spinmob as sm
@@ -17,7 +19,11 @@ from tkinter import Tk     # from tkinter import Tk for Python 3.x
 from tkinter.filedialog import askopenfilename
 
 from trajectory_viewer import TrajectoryViewer
-from traj_physics import TrajPhysics
+from calculate_change_coordinate import Coordinate
+from calculate_simple_info import SimplePhysics
+from calculate_wind import WindEstimator
+from load_gps_data import LoadGPS
+
 
 import traceback
 _p = traceback.print_last #Very usefull command to use for getting the last-not-printed error
@@ -54,29 +60,34 @@ class TrackSelect(egg.gui.Window):
         self.button_load = self.place_object(egg.gui.Button(), 
                                              row=0, column=0,
                                              alignment=-1)
-        self.button_load.set_text('Load GPX')
+        self.button_load.set_text('Load Data')
         self.button_load.set_style('background-color: rgb(0, 100, 0);')
         self.connect(self.button_load.signal_clicked, self._button_load_clicked)  
         
         # =============================================================================
-        #         # Some GUI for choping the trajectory
+        #  Some GUIs for selecting a portion of the trajectory
         # =============================================================================
-        self.nbBox_chop_min = egg.gui.NumberBox(value=0,  bounds=(0, None),
+        self.nbBox_sel_min = egg.gui.NumberBox(value=0,  bounds=(0, None),
                                                 int=True,
-                                                tip='Lower_bound to chop the trajectory.')
-        self.nbBox_chop_len = egg.gui.NumberBox(value=10, bounds=(1, None), 
+                                                tip='Lower_bound to select the trajectory.')
+        self.nbBox_sel_len = egg.gui.NumberBox(value=10, bounds=(1, None), 
                                                 int=True,
-                                                tip='Lenght of the chopping region to chop the trajectory.')        
-        self.button_chop = self.place_object(egg.gui.Button(), 
+                                                tip='Lenght of the selected region of the trajectory.')        
+    
+        self.place_object(self.nbBox_sel_min, row=0, column=2, alignment=0)
+        self.place_object(self.nbBox_sel_len, row=0, column=3, alignment=0)
+        self.connect(self.nbBox_sel_min.signal_changed, self._nbBox_sel_changed) 
+        self.connect(self.nbBox_sel_len.signal_changed, self._nbBox_sel_changed)    
+        
+        # =============================================================================
+        #   Button to calculate the wind       
+        # =============================================================================
+        self.button_wind = self.place_object(egg.gui.Button(), 
                                              row=0, column=1, alignment=-1)
-        self.button_chop.set_text('Chop trajectory')
-        self.button_chop.set_style('background-color: rgb(100, 0, 100);')        
-        self.place_object(self.nbBox_chop_min, row=0, column=2, alignment=0)
-        self.place_object(self.nbBox_chop_len, row=0, column=3, alignment=0)
-        self.connect(self.button_chop.signal_clicked, self._button_chop_clicked) 
-        self.connect(self.nbBox_chop_min.signal_changed, self._nbBox_chop_changed) 
-        self.connect(self.nbBox_chop_len.signal_changed, self._nbBox_chop_changed)          
-                
+        self.button_wind.set_text('Calculate Wind')
+        self.button_wind.set_style('background-color: rgb(100, 0, 100);')    
+        self.connect(self.button_wind.signal_clicked, self._button_wind_clicked) 
+        
         # =============================================================================
         #         # Trajectory plotter
         # =============================================================================
@@ -105,7 +116,7 @@ class TrackSelect(egg.gui.Window):
         # =============================================================================
         #         #Label
         # =============================================================================
-        self.label_gen_info = egg.gui.Label(text='Hello', autosettings_path='label_general_info')
+        self.label_gen_info = egg.gui.Label(text='Waiting to load data')
         self.place_object(self.label_gen_info, row=3, column=0)  
         
         # =============================================================================
@@ -113,41 +124,77 @@ class TrackSelect(egg.gui.Window):
         # =============================================================================
         self.set_column_stretch(0)
 
-    def load_GPX(self, gpx_filepath):
+    def load_data(self, filepath):
         """
-        Load the ".GPX" file. 
-        It structures the data
+        Load the ".GPX" or ".FIT" file. 
+        It structures the data.
 
         Parameters
         ----------
-        gpx_filepath : String
-            Path of the GPX file to load.
+        filepath : String
+            Path of the .GPX or .FIT file to load.
 
         Returns
         -------
         None.
 
         """
-        _debug('TrackSelect:load_GPX')
+        _debug('TrackSelect:load_data')
+
+        self.filepath = filepath
+        self.filename = self.filepath.split(sep='/')[-1]
         
-        self.gpx_filepath = gpx_filepath
-        self.filename = self.gpx_filepath.split(sep='/')[-1]
+        self.data_load = LoadGPS()
         
-        # Get the t, x, y, z (AKA motion!)
-        with open(self.gpx_filepath) as fh:
-            self.gpx_file = gpxpy.parse(fh)        
+        self.file_extension = os.path.splitext(self.filepath)[1]
+        
+        if   self.file_extension.lower() == '.fit':
+            _debug('TrackSelect:load_data: loading .FIT file')
+            t, lat, lon, ele = self.data_load.get_FIT(self.filepath )
+        elif self.file_extension.lower() == '.gpx':
+            _debug('TrackSelect:load_data: loading .GPX file')
+            t, lat, lon, ele = self.data_load.get_GPX(self.filepath)
+        else:
+            raise Exception("Input file must be a .FIT or .GPX file.") 
             
-        _debug("File has {} track(s).".format(len(self.gpx_file.tracks)))   
-        _debug("Track has {} segment(s).".format(len(self.gpx_file.tracks[0].segments))) 
-        # So we take the only track and segment. 
-        self.segment = self.gpx_file.tracks[0].segments[0]
-        _debug('The segment has {} points'.format(len(self.segment.points)))        
+        self.nb_total_pts = len(ele)
         
-        # Get some info
-        self.nb_total_pts = len(self.segment.points)
         
-        # Re-Structure the data points
-        self._structure_data(self.segment.points)
+        # =============================================================================
+        # Convert the time into seconds
+        # =============================================================================
+
+        # Get the initial time       
+        self.t_init_dt = t[0]
+        self.str_init_t = str(self.t_init_dt) # String telling the starting time
+        self.t_init_sec = self.t_init_dt.timestamp()        
+        
+        # The starting time will be zero sec. 
+        self.t_gps = []
+        for t_datatime in t:
+            self.t_gps.append(t_datatime.timestamp() - self.t_init_sec)
+            
+        # =============================================================================
+        # Make the list numpy array, for math operation      
+        # =============================================================================
+        ele = np.array(ele)
+        lat = np.array(lat)
+        lon = np.array(lon)
+        self.t_gps   = np.array(self.t_gps )
+        
+        # =============================================================================
+        #         # Remove the outlier
+        # =============================================================================
+        # Very basic for now. At some point we can have a separeted script with 
+        # more fancy methods
+        # Remove the common outlier when some elevation are insane
+        index = ele<5000 
+        self.ele   = ele[index]
+        self.lat   = lat[index]
+        self.lon   = lon[index]
+        self.t_gps = self.t_gps[index] 
+        
+        self.nb_used_pts = len(self.ele)  
         
         # =============================================================================
         # Update the attributes of the GUI         
@@ -189,30 +236,31 @@ class TrackSelect(egg.gui.Window):
         
         # Update the chopper 
         # By setting update_plot to False, we just update the attributes
-        self._nbBox_chop_changed(update_plot=False)
+        self._nbBox_sel_changed(update_plot=False)
        
         if update_plot:
             self._update_plots()
 
     def _button_load_clicked(self):
         """
-        Load an image. 
+        Open a dialog box to select the file to load. 
+        And load it. 
         """
         _debug('TrackSelect:_button_load_clicked')
-        # =============================================================================
-        # Load the image      
-        # =============================================================================
+
         # we don't want a full GUI, so keep the root window from appearing
         Tk().withdraw() 
         # Get the file directory and name
-        filepath = askopenfilename() # show an "Open" dialog box and return the path to the selected file
-        self.load_GPX(filepath)        
+        # show an "Open" dialog box and return the path to the selected file
+        filepath = askopenfilename()         
+        self.load_data(filepath)        
                
-    def _nbBox_chop_changed(self, value=None, update_plot=True):
+    def _nbBox_sel_changed(self, value=None, update_plot=True):
         """
-        Update the value of the minimum and maximum point for the chopping. 
-        Also update the plots.
-        We don't use directly the input value of the function, but it is required
+        Update the value of the minimum and maximum point for the selected 
+        region
+        Also update the plots and some info
+        We don't use directly the input "v"alue" of the function, but it is required
         such that the signature of the function matches what the widget wants. 
 
         update_plot:
@@ -221,103 +269,46 @@ class TrackSelect(egg.gui.Window):
             The default is True.
             
         """
-        _debug('TrackSelect:_nbBox_chop_changed ')
+        _debug('TrackSelect:_nbBox_sel_changed ')
         
-        self.chop_min = self.nbBox_chop_min.get_value()
-        self.chop_max = self.nbBox_chop_len.get_value() + self.chop_min
-        _debug('self.chop_min, self.chop_max = ', self.chop_min, self.chop_max)
+        self.sel_min = self.nbBox_sel_min.get_value()
+        self.sel_max = self.nbBox_sel_len.get_value() + self.sel_min
+        _debug('self.sel_min, self.sel_max = ', self.sel_min, self.sel_max)
         
-        # Update the plot (should show it)
+        # Update the selected trajectory on certain criteria
         # But is works only in certain condition
-        if self.chop_min < self.chop_max:
-            if self.chop_max < self.nb_used_pts:
-                # Create the chopped data
-                self.xs_chopped = self.xs[self.chop_min:self.chop_max]
-                self.ys_chopped = self.ys[self.chop_min:self.chop_max]
-                self.zs_chopped = self.zs[self.chop_min:self.chop_max]
-                self.ts_chopped = self.ts[self.chop_min:self.chop_max]                
-                # Update the plot if desired
-                if update_plot:
-                    self._update_plots()
+        if (self.sel_min < self.sel_max and 
+            self.sel_max < self.nb_used_pts):
+            # Create the select data
+            self.xs_select = self.xs[self.sel_min:self.sel_max]
+            self.ys_select = self.ys[self.sel_min:self.sel_max]
+            self.zs_select = self.zs[self.sel_min:self.sel_max]
+            self.ts_select = self.ts[self.sel_min:self.sel_max]     
+            # Compute basic stuff
+            self.my_simple = SimplePhysics()
+            self.my_simple.set_data(self.ts_select*60, # SI Unit
+                                    self.xs_select,
+                                    self.ys_select,
+                                    self.zs_select,
+                                    want_print=True)
+            # Update the plot if desired
+            if update_plot:
+                self._update_plots()
     
     
-    def _button_chop_clicked(self):
+    def _button_wind_clicked(self):
         """
         Take a portion of the data and show it
         """
-        _debug('TrackSelect:_button_chop_clicked ')
+        _debug('TrackSelect:_button_wind_clicked ')
         
-
-
-        # Send the chopped data into the physics calculator
-        # MUST BE SI UNIT!
-        self.gui_physics = TrajPhysics().show() # Don't forget to show !
-        self.gui_physics.set_data(self.ts_chopped*60, # Watch out the unit !
-                                  self.xs_chopped, 
-                                  self.ys_chopped, 
-                                  self.zs_chopped,
-                                  units=('sec', 'm', 'm', 'm'),
-                                  labels=('time', 'Longitude projection',
-                                          'Latitue projection', 'Elevation'))
+        self.my_windy = WindEstimator()
+        print('TrackSelect:_button_wind_clicked  WATCHOUT THE ASSUMED UNCERTAINY IN X-Y')
+        self.my_windy.get_wind_bayes(self.ts_select*60, # SI Unit
+                                     self.xs_select,
+                                     self.ys_select,
+                                     sig_x = 1, sig_y=1)
         
-        
-    def _structure_data(self, list_trackpts, outliers=True):
-        """
-        Structure the data. 
-
-        Parameters
-        ----------
-        list_trackpts : List of "gpxpy.gpx.GPXTrackPoint"
-            Each "gpxpy.gpx.GPXTrackPoint" is a data structure on which we 
-            extract the time and x, y, z position. 
-        
-        outliers: Bool
-            TOBE EXPLAINED LATTER
-        
-        Returns
-        -------
-        None.
-
-        """
-        _debug('TrackSelect:_structure_data')
-        
-        self.list_trackpts = list_trackpts
-        
-        # The structure is that each point has the t, x, y, z information.
-        # If we want an array for each degree of freedom, we have to restructure it        
-        self.t_init_dt = self.list_trackpts[0].time
-        self.str_init_t = str(self.t_init_dt) # String telling the starting time
-        self.t_init_sec = self.t_init_dt.timestamp()        
-        
-        # Prepare the array of info
-        if outliers:
-            # Method to remove outliers
-            ele_max = 5000 # Maximum elevation
-            ele, lat, lon, t = [], [], [], []
-            for p in self.list_trackpts:
-                if p.elevation <= ele_max:
-                    ele.append(p.elevation)
-                    lat.append(p.latitude)
-                    lon.append(p.longitude)
-                    t.append(p.time.timestamp() - self.t_init_sec)
-            ele = np.array(ele)
-            lat = np.array(lat)
-            lon = np.array(lon)
-            t   = np.array(t  )              
-        else:          
-            # Take all the track points, outliers or not. 
-            # Pre-allocation
-            ele, lat, lon, t = np.zeros((4,len(self.list_trackpts) ))
-            for i,p, in enumerate(self.list_trackpts):
-                ele[i] = p.elevation
-                lat[i] = p.latitude
-                lon[i] = p.longitude
-                t[i]   = p.time.timestamp() - self.t_init_sec
-        
-        # Save the info in the object
-        self.ele, self.lat, self.lon, self.t_gps = ele, lat, lon, t 
-        self.nb_used_pts = len(self.ele)       
-    
     def _coord_system_changed(self, update_plot=True):
         """
         Called when the combo boxe for the coordinate system change. 
@@ -410,19 +401,32 @@ class TrackSelect(egg.gui.Window):
             
         elif self.coord_sys == 'cartesian':
             # Convert the number into cartesian postion
-            # The elevation remain, but we approximate the latitude and longitude
-            # to span a flat surface, such that we don't bother about the deformation
-            # x and y will be the arc lenght
-            # This will probably be bad at the poles. 
-            # Approximate the planet as a sphere
-            R = 6371*1e3 # m, Radius of the earth 
-            # Formula for the arc lenght as a function of angle
-            self.xs = R*(self.lon-np.min(self.lon))*np.pi/180
-            self.ys = R*(self.lat-np.min(self.lat))*np.pi/180
-            self.zs = self.ele
+            self.my_coor_conv = Coordinate()
+            out = self.my_coor_conv.GPS_2_cartesian(self.lon, 
+                                                    self.lat, 
+                                                    self.ele,
+                                                    R_planet = 6371*1e3)
+            self.xs, self.ys, self.zs = out
             self.ts = self.t_gps/60
             self.units =('min', 'm', 'm', 'm')
-            self.labels=('time', 'Longitude projection', 'Latitue projection', 'Elevation')
+            self.labels=('time', 'x', 'y', 'Elevation')
+            
+           # Delete when everything works
+            # # The elevation remain, but we approximate the latitude and longitude
+            # # to span a flat surface, such that we don't bother about the deformation
+            # # x and y will be the arc lenght
+            # # This will probably be bad at the poles. 
+            # # Approximate the planet as a sphere
+            # R = 6371*1e3 # m, Radius of the earth 
+            # # Formula for the arc lenght as a function of angle
+            # self.xs = R*(self.lon-np.min(self.lon))*np.pi/180
+            # self.ys = R*(self.lat-np.min(self.lat))*np.pi/180
+            # self.zs = self.ele
+            # self.ts = self.t_gps/60
+            # self.units =('min', 'm', 'm', 'm')
+            # self.labels=('time', 'Longitude projection', 'Latitue projection', 'Elevation')
+            # print('NEXT IMPROVEMENT: MAKE A REAL CARTESIAN CHANGE AND ROTATE IT WITH THE NORTH POLE')
+            
         else:
             print('Error TrackSelect.set_coordinate_syst --> coord_sys=',coord_sys, ' is not a proper input.')
             
@@ -443,10 +447,10 @@ class TrackSelect(egg.gui.Window):
                                         units=self.units,
                                         labels=self.labels)
         # Add the region for choping 
-        self.traj_viewer.set_trajectory(self.ts_chopped,
-                                        self.xs_chopped, 
-                                        self.ys_chopped,
-                                        self.zs_chopped,
+        self.traj_viewer.set_trajectory(self.ts_select,
+                                        self.xs_select, 
+                                        self.ys_select,
+                                        self.zs_select,
                                         overwrite=False,
                                         width=2,
                                         units=self.units,
@@ -460,15 +464,12 @@ if __name__ == '__main__':
     _debug_enabled     = True
 
     sm.settings['dark_theme_qt'] = True
-    sm.settings['ignore_warnings']=True
+    sm.settings['ignore_warnings']=False
     
     self = TrackSelect()
     self.show()
     
-    
-    
-    
-    
+
         
         
         

@@ -1,2 +1,0 @@
-In a new console, type 
-import pyqtgraph.examples; pyqtgraph.examples.run()
